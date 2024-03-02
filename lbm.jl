@@ -4,12 +4,12 @@ using Plots
 using .Threads
 using ParallelStencil
 using ParallelStencil.FiniteDifferences2D
-const USE_GPU = true
+const USE_GPU = false
 
 @static if USE_GPU
 	@init_parallel_stencil(CUDA, Float32, 2)
 else
-	@init_parallel_stencil(Threads, Float64, 2)
+	@init_parallel_stencil(Threads, Float32, 2)
 end
 
 const c = [ 0   0;
@@ -258,6 +258,7 @@ y = range(0, stop = L_y, length = n_y)
 		T_s[i, j] = 0
 		# central gamma obstacle
 		#if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
+        
 		gamma[i, j] = (1 .- 1.0 * exp(-((xl - 0.5)^2 + (yl - 0.5)^2) * 1000.0))
 
 		Q_s[i, j] = exp(-((xl - 0.5)^2 + (yl - 0.1)^2) * 10000.0) * 10.0 - exp(-((xl - 0.5)^2 + (yl - 0.9)^2) * 10000.0) * 10.0
