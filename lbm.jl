@@ -21,20 +21,17 @@ const L_x = 1
 const L_y = 1
 
 const Ht = 150e-6
-const Htfactor = 2e5
+const Htfactor = 2e1
 const ramp_p = 1e-6
 const ramp_k = 1e-6
-const K_f = 0.0001
-const K_s = 0.05
-const K_sub = 0.005
-const kappa_cs = 0.005
-
-
-const resolution = 400
-
-const nu = 1.0
-
+const K_f = 0.00001
+const K_s = 0.0005
+const K_sub = 0.0005
+const kappa_cs = 0.0005
+const resolution = 200
+const nu = 0.0001
 const t_end = 100.0
+const v_0 = 0.2
 
 ## Dependent Parameters
 
@@ -272,13 +269,16 @@ Threads.@threads for i in 1:n_x
         xl = (i - 1 + 0.5) * dx
         yl = (j - 1 + 0.5) * dx
 
-        u[i, j] = 0
-        v[i, j] = 0.1 #xl < 0.5*L_x ? 0.1 : -0.1
+        u[i, j] = 0.01 * randn()
+        v[i, j] = v_0 #xl < 0.5*L_x ? 0.1 : -0.1
         T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
         T_s[i, j] = 0
         # central gamma obstacle
         #if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
-        gamma[i, j] = (1 .- 1.0*exp(-((x[i] - 0.5)^2 + (y[j] - 0.5)^2) * 1000.0))
+        if(xl - 0.5)^2 + (yl - 0.25)^2 < 0.03^2
+            gamma[i, j] = 0.0
+        end
+      
 
         Q_s[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.1)^2) * 10000.0) * 10.0 - exp(-((x[i] - 0.5)^2 + (y[j] - 0.9)^2) * 10000.0) * 10.0
     end
@@ -304,8 +304,6 @@ end
 
 function main() 
 
-    `rm run/'*'`
-
     ENV["GKSwstype"]="nul";
 
     println("Number of threads: $(Threads.nthreads())")
@@ -325,6 +323,7 @@ function main()
     ag = alpha_gamma(gamma)
     tg = tau_g(K_gamma(gamma))
 
+    it = 0
 
     for t in 1:n_t
         compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
@@ -349,24 +348,25 @@ function main()
         memcpy(g_c, g_c_dash)
         memcpy(g_s, g_s_dash)
         
-        print("Time: $(t * dt)\r")
+        print("Time: $(t * dt), it=$it                                           \r")
 
-        if t % 100 == 0
+        if t % 50 == 0
         
             
             T_c_hm = heatmap(x, y, transpose(T_c))
             T_s_hm = heatmap(x, y, transpose(T_s))
-            v_hm = heatmap(x, y, transpose(v), clim = (0, 0.15))
+            v_hm = heatmap(x, y, transpose(v), clim = (0, 0.5))
             
          
 
             p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
 
-            savefig("run/$(lpad(t, 4, '0')).png")
+            savefig("run/$(lpad(it, 4, '0')).png")
             # display(p)
 
             #println("Time: $ti")
             
+            it += 1
         end
     end
 
