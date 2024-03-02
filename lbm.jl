@@ -32,8 +32,8 @@ const kappa_cs = 0.0005
 const resolution = 200
 const nu = 0.0001
 const t_end = 100.0
-const v_0 = 0.3
 
+const v_0 = 0.2
 
 
 
@@ -77,6 +77,7 @@ function g_eq_i(T, u, v, i,  c, w)
     cu = c[i, 1] * u + c[i, 2] * v
    return w[i] * T * (1 + 3 * cu)
 end
+
 # Equation 17
 function g_equilibrium!(T, u, v, g_eq, c, w)
 	for i in 1:9
@@ -106,6 +107,7 @@ end
 
 		for i in 1:9
 			f[i, ix, iy] -= 1 / tau_f * (f[i, ix, iy] - f_eqs[i])
+
 		end
 	end
 	return nothing
@@ -288,6 +290,7 @@ function main()
 
 	ENV["GKSwstype"] = "nul"
 
+
 	println("Number of threads: $(Threads.nthreads())")
 
     # Initial condition
@@ -327,6 +330,7 @@ function main()
 	ag = alpha_gamma(gamma)
 	tg = tau_g(K_gamma(gamma))
 
+    it = 0
 
 
 
@@ -354,24 +358,28 @@ function main()
 		# @parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
 		# @parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
 
-		print("Time: $(t * dt)\r")
 
-		if t % 100 == 0
+        print("Time: $(t * dt), it=$it                                           \r")
+
+        if t % 50 == 0
 
 
 			# T_c_hm = heatmap(x, y, transpose(T_c))
 			# T_s_hm = heatmap(x, y, transpose(T_s))
-			# v_hm = heatmap(x, y, transpose(v), clim = (0, 0.15))
+			# v_hm = heatmap(x, y, transpose(v), clim = (0, 0.5))
+
 
 
 
 			# p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
 
 			# savefig("run/$(lpad(t, 4, '0')).png")
+
 			# display(p)
 
 			#println("Time: $ti")
 
+            it += 1
 		end
 	end
 
