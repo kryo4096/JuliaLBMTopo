@@ -135,34 +135,32 @@ end
     return nothing
 end
 
-function g_c_relax!(g, tau_g, T, u, v, T_ref)
+@parallel_indices (ix, iy) function g_c_relax!(g, tau_g, T, u, v, T_ref)
 
-    g_c_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+    g_c_eqs = zeros(Float64,9)
 
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
-            g_equilibrium!(T[ix,iy], u[ix,iy], v[ix,iy], g_c_eqs[Threads.threadid()])
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
+            g_equilibrium!(T[ix,iy], u[ix,iy], v[ix,iy], g_c_eqs)
 
             for i in 1:9
-                g[i,ix,iy] -= 1/tau_g[ix,iy] * (g[i,ix,iy] - g_c_eqs[Threads.threadid()][i])
+                g[i,ix,iy] -= 1/tau_g[ix,iy] * (g[i,ix,iy] - g_c_eqs[i])
             end
-        end
     end
+    return nothing
 end
 
-function g_s_relax!(g, T, T_ref)
+@parallel_indices (ix, iy) function g_s_relax!(g, T, T_ref)
 
     g_s_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
 
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
             g_eq = g_equilibrium!(T[ix,iy], 0, 0, g_s_eqs[Threads.threadid()])
 
             for i in 1:9
                 g[i,ix,iy] -= 1/tau_g_s * (g[i,ix,iy] - g_s_eqs[Threads.threadid()][i])
             end
-        end
     end
+    return nothing
 end
 
 @parallel_indices (ix,iy) function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
@@ -210,9 +208,8 @@ function bindex(i)
     return j
 end
 
-function stream!(pop_old, pop_new)
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
+@parallel_indices (ix, iy) function stream!(pop_old, pop_new)
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
             for i in 1:9
                 
                 iy_new = iy - c[i, 2]
@@ -225,10 +222,9 @@ function stream!(pop_old, pop_new)
                     ix_new = mod1(ix - c[i, 1], n_x)
                     pop_new[i, ix, iy] = pop_old[i, ix_new, iy_new]
                 end
-                    
-            end
         end
     end
+    return nothing
 end
 
 
@@ -335,12 +331,12 @@ function main()
 
         @parallel apply_damping!(f, rho, u, v, ag)
        
-        g_c_relax!(g_c, tg , T_c, u, v, T_ref)
-        g_s_relax!(g_s, T_s, T_ref)
+        @parallel g_c_relax!(g_c, tg , T_c, u, v, T_ref)
+        @parallel g_s_relax!(g_s, T_s, T_ref)
 
-        stream!(f, f_dash)
-        stream!(g_c, g_c_dash)
-        stream!(g_s, g_s_dash)
+        @parallel stream!(f, f_dash)
+        @parallel stream!(g_c, g_c_dash)
+        @parallel stream!(g_s, g_s_dash)
         
 
         memcpy(f, f_dash)
