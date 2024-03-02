@@ -21,7 +21,7 @@ const L_x = 1
 const L_y = 1
 
 const Ht = 150e-6
-const Htfactor = 2e6
+const Htfactor = 2e5
 const ramp_p = 1e-6
 const ramp_k = 1e-6
 const K_f = 0.0001
@@ -30,7 +30,7 @@ const K_sub = 0.005
 const kappa_cs = 0.005
 
 
-const resolution = 500
+const resolution = 100
 
 const nu = 0.0001
 
@@ -59,29 +59,21 @@ function pow(x,y)
 end
 
 # Equation 16
-function f_equilibrium(rho, u, v)
-    f_eq = zeros(Float64, 9)
-
+function f_equilibrium!(rho, u, v, f_eq)
     for i in 1:9
         cu = c[i, 1] * u + c[i, 2] * v
         f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
 
         #f_eq[i] = w[i] * rho * (2 - sqrt(1 + 3 * u^2) ) * (2-sqrt(1+3*v^2)) * pow((2*u+ sqrt(1 + 3*u^2)) / (1-u), c[i,1]) * pow((2 * v + sqrt(1+ 3 * v^2)) / (1-v), c[i,2]);
     end
-
-    return f_eq
 end
 
 # Equation 17
-function g_equilibrium(T, u, v)
-	g_eq = zeros(Float64, 9)
-
+function g_equilibrium!(T, u, v, g_eq)
 	for i in 1:9
 		cu = c[i, 1] * u + c[i, 2] * v
 		g_eq[i] = w[i] * T * (1 + 3 * cu)
 	end
-
-	return g_eq
 end
 
 function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
@@ -89,9 +81,13 @@ function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
     Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
 
-            f_eq = f_equilibrium(rho[ix, iy], u[ix, iy], v[ix, iy])
-            g_c_eq = g_equilibrium(T_c[ix, iy], u[ix, iy], v[ix, iy])
-            g_s_eq = g_equilibrium(T_s[ix, iy], 0.0, 0.0)
+            f_eq = zeros(Float64, 9)
+            g_c_eq = zeros(Float64, 9)
+            g_s_eq = zeros(Float64, 9)
+
+            f_equilibrium!(rho[ix, iy], u[ix, iy], v[ix, iy], f_eq)
+            g_equilibrium!(T_c[ix, iy], u[ix, iy], v[ix, iy], g_c_eq)
+            g_equilibrium!(T_s[ix, iy], 0.0, 0.0, g_s_eq)
 
             for i in 1:9
                 f[i, ix, iy] = f_eq[i]
@@ -103,14 +99,17 @@ function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
 end
 
 function f_relax!(f, tau_f, rho, u, v)
+
+    f_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+
     Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
-            f_eq = f_equilibrium(rho[ix,iy], u[ix,iy], v[ix,iy])
+            f_equilibrium!(rho[ix,iy], u[ix,iy], v[ix,iy], f_eqs[Threads.threadid()])
 
             #f_mirror = 2 * f_eq - f[:,ix,iy]
 
             for i in 1:9
-                f[i,ix,iy] -= 1/tau_f * (f[i,ix,iy] - f_eq[i])
+                f[i,ix,iy] -= 1/tau_f * (f[i,ix,iy] - f_eqs[Threads.threadid()][i])
             end
         end
     end
@@ -133,24 +132,30 @@ function apply_damping!(f, rho, u, v, alpha_gamma)
 end
 
 function g_c_relax!(g, tau_g, T, u, v, T_ref)
+
+    g_c_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+
     Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
-            g_eq = g_equilibrium(T[ix,iy], u[ix,iy], v[ix,iy])
+            g_equilibrium!(T[ix,iy], u[ix,iy], v[ix,iy], g_c_eqs[Threads.threadid()])
 
             for i in 1:9
-                g[i,ix,iy] -= 1/tau_g[ix,iy] * (g[i,ix,iy] - g_eq[i])
+                g[i,ix,iy] -= 1/tau_g[ix,iy] * (g[i,ix,iy] - g_c_eqs[Threads.threadid()][i])
             end
         end
     end
 end
 
 function g_s_relax!(g, T, T_ref)
+
+    g_s_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+
     Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
-            g_eq = g_equilibrium(T[ix,iy], 0, 0)
+            g_eq = g_equilibrium!(T[ix,iy], 0, 0, g_s_eqs[Threads.threadid()])
 
             for i in 1:9
-                g[i,ix,iy] -= 1/tau_g_s * (g[i,ix,iy] - g_eq[i])
+                g[i,ix,iy] -= 1/tau_g_s * (g[i,ix,iy] - g_s_eqs[Threads.threadid()][i])
             end
         end
     end
@@ -303,6 +308,8 @@ function main()
 
     ENV["GKSwstype"]="nul";
 
+    println("Number of threads: $(Threads.nthreads())")
+
     f = zeros(Float64, 9, n_x, n_y)
     g_c = zeros(Float64, 9, n_x, n_y)
     g_s = zeros(Float64, 9, n_x, n_y)
@@ -319,7 +326,7 @@ function main()
     tg = tau_g(K_gamma(gamma))
 
 
-    anim = @animate for t in 1:n_t
+    for t in 1:n_t
         compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
 
         #v .+= 0.2 * dt
@@ -343,16 +350,16 @@ function main()
         memcpy(g_c, g_c_dash)
         memcpy(g_s, g_s_dash)
         
+        print("Time: $(t * dt)\r")
+
+        if t % 100 == 0
         
-        if t % 1000 == 0
-            ti = t * dt
-            
             
             T_c_hm = heatmap(x, y, transpose(T_c))
             T_s_hm = heatmap(x, y, transpose(T_s))
             v_hm = heatmap(x, y, transpose(v), clim = (0, 0.15))
             
-            print("Time: $ti\r")
+         
 
             p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
 
@@ -364,7 +371,7 @@ function main()
         end
     end
 
-    gif(anim, "run/anim.gif", fps = 30)
+    #gif(anim, "run/anim.gif", fps = 30)
 end
 
 end # module
