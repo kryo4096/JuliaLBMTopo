@@ -105,21 +105,19 @@ end
     return nothing
 end
 
-function f_relax!(f, tau_f, rho, u, v)
+@parallel_indices (ix, iy) function f_relax!(f, tau_f, rho, u, v)
 
-    f_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+    # f_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+    f_eqs = zeros(Float64,9)
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
+            f_equilibrium!(rho[ix,iy], u[ix,iy], v[ix,iy], f_eqs)
 
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
-            f_equilibrium!(rho[ix,iy], u[ix,iy], v[ix,iy], f_eqs[Threads.threadid()])
-
-            #f_mirror = 2 * f_eq - f[:,ix,iy]
 
             for i in 1:9
-                f[i,ix,iy] -= 1/tau_f * (f[i,ix,iy] - f_eqs[Threads.threadid()][i])
+                f[i,ix,iy] -= 1/tau_f * (f[i,ix,iy] - f_eqs[i])
             end
-        end
     end
+    return nothing
 end
 
 # equation 20
@@ -192,17 +190,12 @@ end
     return nothing
 end
 
-function apply_heat_source!(rho, T, source)
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
-            
-            x = (ix - 1) * dx
-            y = (iy - 1) * dx
-
+@parallel_indices (ix, iy) function apply_heat_source!(rho, T, source)
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
             T[ix, iy] += source[ix,iy] * dt
 
-        end
     end
+    return nothing
 end
 
 function bindex(i)
@@ -290,12 +283,11 @@ Threads.@threads for i in 1:n_x
     end
 end
 
-function cs_coupling!(T_c, T_s, dQ)
-    Threads.@threads for i in 1:n_x
-        for j in 1:n_y
-            dQ[i, j] = kappa_cs * (T_c[i, j] - T_s[i, j])
-        end
+@parallel_indices (i,j) function cs_coupling!(T_c, T_s, dQ)
+    if i >= 1 && i <= n_x && j >= 1 && j <= n_y
+        dQ[i, j] = kappa_cs * (T_c[i, j] - T_s[i, j])
     end
+    return nothing
 end
 
 function memcpy(dst, src)
@@ -336,11 +328,11 @@ function main()
         @parallel compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
 
         #v .+= 0.2 * dt
-        cs_coupling!(T_c, T_s, dQ)
-        apply_heat_source!(rho, T_s, Q_s + dQ)
-        apply_heat_source!(rho, T_c, -dQ)
+        @parallel cs_coupling!(T_c, T_s, dQ)
+        @parallel apply_heat_source!(rho, T_s, Q_s + dQ)
+        @parallel apply_heat_source!(rho, T_c, -dQ)
 
-        f_relax!(f, tau_f, rho, u, v)
+        @parallel f_relax!(f, tau_f, rho, u, v)
 
         apply_damping!(f, rho, u, v, ag)
        
