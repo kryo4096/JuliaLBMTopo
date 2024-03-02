@@ -30,11 +30,11 @@ const K_sub = 0.005
 const kappa_cs = 0.005
 
 
-const resolution = 100
+const resolution = 400
 
-const nu = 0.0001
+const nu = 1.0
 
-const t_end = 10.0
+const t_end = 100.0
 
 ## Dependent Parameters
 
@@ -61,10 +61,10 @@ end
 # Equation 16
 function f_equilibrium!(rho, u, v, f_eq)
     for i in 1:9
-        cu = c[i, 1] * u + c[i, 2] * v
-        f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
+        #cu = c[i, 1] * u + c[i, 2] * v
+        #f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
 
-        #f_eq[i] = w[i] * rho * (2 - sqrt(1 + 3 * u^2) ) * (2-sqrt(1+3*v^2)) * pow((2*u+ sqrt(1 + 3*u^2)) / (1-u), c[i,1]) * pow((2 * v + sqrt(1+ 3 * v^2)) / (1-v), c[i,2]);
+        f_eq[i] = w[i] * rho * (2 - sqrt(1 + 3 * u^2) ) * (2-sqrt(1+3*v^2)) * pow((2*u+ sqrt(1 + 3*u^2)) / (1-u), c[i,1]) * pow((2 * v + sqrt(1+ 3 * v^2)) / (1-v), c[i,2]);
     end
 end
 
@@ -109,7 +109,7 @@ function f_relax!(f, tau_f, rho, u, v)
             #f_mirror = 2 * f_eq - f[:,ix,iy]
 
             for i in 1:9
-                f[i,ix,iy] -= 1/tau_f * (f[i,ix,iy] - f_eqs[Threads.threadid()][i])
+                f[i,ix,iy] = f[i,ix,iy] - 1/tau_f * (f[i,ix,iy] - f_eqs[Threads.threadid()][i])
             end
         end
     end
@@ -344,7 +344,6 @@ function main()
         stream!(f, f_dash)
         stream!(g_c, g_c_dash)
         stream!(g_s, g_s_dash)
-        
 
         memcpy(f, f_dash)
         memcpy(g_c, g_c_dash)
@@ -374,4 +373,4 @@ function main()
     #gif(anim, "run/anim.gif", fps = 30)
 end
 
-end # module
+end # module 
