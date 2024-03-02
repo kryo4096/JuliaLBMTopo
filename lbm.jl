@@ -69,12 +69,7 @@ end
 function f_equilibrium!(rho, u, v, f_eq, c)
 
         for i in 1:9
-
                 f_eq[i] = f_eq_i(rho, u, v, i, c)
-		# cu = c[i, 1] * u + c[i, 2] * v
-		# f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
-
-		#f_eq[i] = w[i] * rho * (2 - sqrt(1 + 3 * u^2) ) * (2-sqrt(1+3*v^2)) * pow((2*u+ sqrt(1 + 3*u^2)) / (1-u), c[i,1]) * pow((2 * v + sqrt(1+ 3 * v^2)) / (1-v), c[i,2]);
 	end
 end
 
@@ -91,28 +86,13 @@ end
 
 @parallel_indices (ix, iy) function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s, c, w)
 
-	# Threads.@threads for ix in 1:n_x
-	#     for iy in 1:n_y
-        # f_eq = @zeros(9)
-        # g_c_eq = @zeros(9)
-        # g_s_eq = @zeros(9)
-        
-           
+          
         for i in 1:9
             f[i, ix, iy] = f_eq_i(rho[ix, iy], u[ix, iy], v[ix, iy], i, c, w)
             g_c[i, ix, iy] = g_eq_i(T_c[ix, iy], u[ix, iy], v[ix, iy], i, c, w)
             g_s[i, ix, iy] = g_eq_i(T_s[ix, iy], 0.0, 0.0, i, c, w)
         end
         
-        # f_equilibrium!(rho[ix, iy], u[ix, iy], v[ix, iy], f[i, ix, iy], c)
-        # g_equilibrium!(T_c[ix, iy], u[ix, iy], v[ix, iy], g_c[:, ix, iy])
-        # g_equilibrium!(T_s[ix, iy], 0.0, 0.0, g_s[:, ix, iy])
-
-        # for i in 1:9
-        # 	f[i, ix, iy] = f_eq[i]
-        # 	g_c[i, ix, iy] = g_c_eq[i]
-        # 	g_s[i, ix, iy] = g_s_eq[i]
-        # end
 	return nothing
 end
 
@@ -175,12 +155,8 @@ end
 end
 
 
-@noinline function getc1(i)
-    return c[i, 1]
-end
 
-
-@parallel_indices (ix, iy) function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+@parallel_indices (ix, iy) function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
 
                 
 
@@ -194,9 +170,9 @@ end
            
             for i in 1:9
                 rho[ix, iy] += f[i, ix, iy]
-                u[ix, iy] += getc1(i) * f[i, ix, iy]
-                # v[ix, iy] += c[i, 2] * f[i, ix, iy]
-                # P[ix, iy] += 3 * (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy])^2 * f[i, ix, iy]
+                u[ix, iy] += c[i, 1] * f[i, ix, iy]
+                v[ix, iy] += c[i, 2] * f[i, ix, iy]
+                P[ix, iy] += 3 * (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy])^2 * f[i, ix, iy]
                 T_c[ix, iy] += g_c[i, ix, iy]
                 T_s[ix, iy] += g_s[i, ix, iy]
             end
@@ -290,9 +266,6 @@ y = range(0, stop = L_y, length = n_y)
 end
 
 
-
-
-
 @parallel_indices (i, j) function cs_coupling!(T_c, T_s, dQ)
 	if i >= 1 && i <= n_x && j >= 1 && j <= n_y
 		dQ[i, j] = kappa_cs * (T_c[i, j] - T_s[i, j])
@@ -358,7 +331,7 @@ function main()
 
 
 	for t in 1:n_t
-		# @parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+		@parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
 
 		#v .+= 0.2 * dt
 		# @parallel (1:n_x, 1:n_y) cs_coupling!(T_c, T_s, dQ)
