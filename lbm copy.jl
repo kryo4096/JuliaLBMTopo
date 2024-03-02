@@ -1,7 +1,7 @@
+
 module LBM
 
 using Plots
-
 
 
 const c = [  0   0; 
@@ -20,10 +20,10 @@ const w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36]
 const L_x = 1
 const L_y = 1
 
-const resolution = 200
+const resolution = 100
 
-const nu = 0.01
-const k = 0.01
+const nu = 0.0001
+const k = 0.0001
 
 const n_t = 1000
 
@@ -133,6 +133,7 @@ function apply_source_term!(rho, u, v, T)
             x = (ix - 1) * dx
             y = (iy - 1) * dx
 
+            
             T[ix, iy] += source(x,y) * dt
         end
     end
@@ -179,6 +180,7 @@ y = range(0, stop=L_y, length=n_y)
 
 # Initial condition
 rho = ones(Float64, n_x, n_y)
+gamma 
 u = zeros(Float64, n_x, n_y)
 v = zeros(Float64, n_x, n_y)
 T = zeros(Float64, n_x, n_y)
@@ -189,11 +191,11 @@ T_ref = zeros(Float64, n_x, n_y)
 
 for i in 1:n_x
     for j in 1:n_y
-        xl = (i - 1 + 0.5) * dx
-        yl = (j - 1 + 0.5) * dx
+        xl = (i - 1) * dx
+        yl = (j - 1) * dx
 
         u[i, j] = 0
-        v[i, j] = xl < 0.5*L_x + 0.05 * sin(yl/L_y*pi*2) ? 0.1 : -0.1
+        v[i, j] = xl < 0.5*L_x ? 0.1 : -0.1
         T[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
 
         T_ref[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
@@ -210,6 +212,8 @@ function main()
     g_dash = zeros(Float64, 9, n_x, n_y)
 
     init_pops!(f, g, rho, u, v, T)
+
+    
 
     for t in 1:n_t
         compute_moments!(f, g, rho, u, v, T)
@@ -231,4 +235,4 @@ function main()
     end
 end
 
-end # module
+end
