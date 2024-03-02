@@ -362,6 +362,7 @@ function main()
             p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
 
             savefig("run/$(lpad(it, 4, '0')).png")
+
             # display(p)
 
             #println("Time: $ti")
