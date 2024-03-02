@@ -20,6 +20,10 @@ const w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36]
 const L_x = 1
 const L_y = 1
 
+const Ht = 150e-6
+const Htfactor = 2e2
+const ramp_p = 30.0
+
 const resolution = 100
 
 const nu = 0.0001
@@ -91,6 +95,8 @@ function f_relax!(f, tau_f, rho, u, v)
     end
 end
 
+
+
 function g_relax!(g, tau_g, T, u, v, T_ref)
     for ix in 1:n_x
         for iy in 1:n_y
@@ -139,6 +145,7 @@ function apply_source_term!(rho, u, v, T)
     end
 end
 
+
 function bindex(i)
     j = i
     if j == 3
@@ -173,6 +180,10 @@ function stream!(pop_old, pop_new)
     end
 end
 
+function alpha_gamma(gamma)
+    return @. Htfactor * ramp_p * ( 1 - gamma ) / (ramp_p + gamma)
+end
+
 x = range(0, stop=L_x, length=n_x)
 y = range(0, stop=L_y, length=n_y)
 
@@ -180,7 +191,9 @@ y = range(0, stop=L_y, length=n_y)
 
 # Initial condition
 rho = ones(Float64, n_x, n_y)
-gamma 
+gamma = ones(Float64, n_x, n_y)
+
+
 u = zeros(Float64, n_x, n_y)
 v = zeros(Float64, n_x, n_y)
 T = zeros(Float64, n_x, n_y)
@@ -195,15 +208,18 @@ for i in 1:n_x
         yl = (j - 1) * dx
 
         u[i, j] = 0
-        v[i, j] = xl < 0.5*L_x ? 0.1 : -0.1
+        v[i, j] = 0.01 #xl < 0.5*L_x ? 0.1 : -0.1
         T[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
-
+        # central gamma obstacle
+        #if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
+        gamma[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
+        #end
         T_ref[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
     end
 end
 
 function main() 
-    ENV["GKSwstype"]="nul"; loadpath = "./run/"; anim = Animation(loadpath,String[]); println("Animation directory: $(anim.dir)")
+    ENV["GKSwstype"]="nul"; loadpath = "./run-better"; anim = Animation(loadpath,String[]); println("Animation directory: $(anim.dir)")
 
     f = zeros(Float64, 9, n_x, n_y)
     g = zeros(Float64, 9, n_x, n_y)
@@ -213,7 +229,6 @@ function main()
 
     init_pops!(f, g, rho, u, v, T)
 
-    
 
     for t in 1:n_t
         compute_moments!(f, g, rho, u, v, T)
@@ -228,7 +243,7 @@ function main()
         if t % 1 == 0
             ti = t * dt
             heatmap(x, y, transpose(T))
-            savefig("run/T_$t.png")
+            savefig("$loadpath/T_$t.png")
             
             print("Time: $ti\r")
         end
