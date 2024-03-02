@@ -17,7 +17,7 @@ const c = [  0   0;
 const w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36]
 
 ## PARAMETERS
-const L_x = 1
+const L_x = 2
 const L_y = 1
 
 const Ht = 150e-6
@@ -28,10 +28,10 @@ const K_f = 0.00001
 const K_s = 0.0005
 const K_sub = 0.0005
 const kappa_cs = 0.0005
-const resolution = 200
+const resolution = 500
 const nu = 0.0001
 const t_end = 100.0
-const v_0 = 0.2
+const v_0 = 0.1
 
 ## Dependent Parameters
 
@@ -217,7 +217,7 @@ function stream!(pop_old, pop_new)
                 iy_new = iy - c[i, 2]
                 
                 
-                if false #iy_new < 1 || iy_new > n_y
+                if iy_new < 1 || iy_new > n_y
                     pop_new[i, ix, iy] = pop_old[bindex(i), ix, iy]
                 else
                     iy_new = mod1(iy - c[i, 2], n_y)
@@ -269,18 +269,27 @@ Threads.@threads for i in 1:n_x
         xl = (i - 1 + 0.5) * dx
         yl = (j - 1 + 0.5) * dx
 
-        u[i, j] = 0.01 * randn()
-        v[i, j] = v_0 #xl < 0.5*L_x ? 0.1 : -0.1
+        u[i, j] = v_0 + 0.01 * randn()
+        v[i, j] = 0.01 * randn()
         T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
         T_s[i, j] = 0
         # central gamma obstacle
         #if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
-        if(xl - 0.5)^2 + (yl - 0.25)^2 < 0.03^2
+
+        radius = (xl - 0.5)^2 + (yl - 0.5)^2
+
+        if radius < 0.03^2
             gamma[i, j] = 0.0
         end
-      
 
-        Q_s[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.1)^2) * 10000.0) * 10.0 - exp(-((x[i] - 0.5)^2 + (y[j] - 0.9)^2) * 10000.0) * 10.0
+        if radius < 0.01^2
+            Q_s[i, j] = 1000.0
+        end
+
+        if xl < 0.1 && yl > 0.2 && yl < 0.8
+            Q_s[i, j] = -10.0
+        end
+
     end
 end
 
@@ -350,16 +359,16 @@ function main()
         
         print("Time: $(t * dt), it=$it                                           \r")
 
-        if t % 50 == 0
+        if t % 100 == 0
         
             
             T_c_hm = heatmap(x, y, transpose(T_c))
-            T_s_hm = heatmap(x, y, transpose(T_s))
-            v_hm = heatmap(x, y, transpose(v), clim = (0, 0.5))
+            #T_s_hm = heatmap(x, y, transpose(T_s))
+            v_hm = heatmap(x, y, transpose(u), clim = (0, 0.5))
             
          
 
-            p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
+            p = plot(T_c_hm,  v_hm, layout = (1, 2), size = (2000, 500))
 
             savefig("run/$(lpad(it, 4, '0')).png")
             # display(p)
