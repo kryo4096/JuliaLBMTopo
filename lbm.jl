@@ -12,17 +12,10 @@ else
 	@init_parallel_stencil(Threads, Float32, 2)
 end
 
-const c = [ 0   0;
-	 1   0;
-	 0   1;
-	-1   0;
-	 0  -1;
-	 1   1;
-	-1   1;
-	-1  -1;
-	 1  -1]
 
-const w = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36]
+const c = Data.Array([0 0;1 0;0 1;-1 0;0 -1;1 1;-1 1;-1 -1;1 -1])
+
+const w = Data.Array([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
 
 ## PARAMETERS
 const L_x = 1
@@ -40,6 +33,8 @@ const resolution = 200
 const nu = 0.0001
 const t_end = 100.0
 const v_0 = 0.3
+
+
 
 
 ## Dependent Parameters]
@@ -64,51 +59,68 @@ function pow(x, y)
 	return x^y
 end
 
+
+
+function f_eq_i(rho, u, v, i, c, w)
+	cu = c[i, 1] * u + c[i, 2] * v
+	return w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
+end
 # Equation 16
-function f_equilibrium!(rho, u, v, f_eq)
-	for i in 1:9
-		cu = c[i, 1] * u + c[i, 2] * v
-		f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
+function f_equilibrium!(rho, u, v, f_eq, c)
+
+        for i in 1:9
+
+                f_eq[i] = f_eq_i(rho, u, v, i, c)
+		# cu = c[i, 1] * u + c[i, 2] * v
+		# f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
 
 		#f_eq[i] = w[i] * rho * (2 - sqrt(1 + 3 * u^2) ) * (2-sqrt(1+3*v^2)) * pow((2*u+ sqrt(1 + 3*u^2)) / (1-u), c[i,1]) * pow((2 * v + sqrt(1+ 3 * v^2)) / (1-v), c[i,2]);
 	end
 end
 
+function g_eq_i(T, u, v, i,  c, w)
+    cu = c[i, 1] * u + c[i, 2] * v
+   return w[i] * T * (1 + 3 * cu)
+end
 # Equation 17
-function g_equilibrium!(T, u, v, g_eq)
+function g_equilibrium!(T, u, v, g_eq, c, w)
 	for i in 1:9
-		cu = c[i, 1] * u + c[i, 2] * v
-		g_eq[i] = w[i] * T * (1 + 3 * cu)
+            g_eq[i] = g_eq_i(T, u, v, c, w)
 	end
 end
 
-@parallel_indices (ix, iy) function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
+@parallel_indices (ix, iy) function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s, c, w)
 
 	# Threads.@threads for ix in 1:n_x
 	#     for iy in 1:n_y
-	if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
-		f_eq = @zeros(9)
-		g_c_eq = @zeros(9)
-		g_s_eq = @zeros(9)
+        # f_eq = @zeros(9)
+        # g_c_eq = @zeros(9)
+        # g_s_eq = @zeros(9)
+        
+           
+        for i in 1:9
+            f[i, ix, iy] = f_eq_i(rho[ix, iy], u[ix, iy], v[ix, iy], i, c, w)
+            g_c[i, ix, iy] = g_eq_i(T_c[ix, iy], u[ix, iy], v[ix, iy], i, c, w)
+            g_s[i, ix, iy] = g_eq_i(T_s[ix, iy], 0.0, 0.0, i, c, w)
+        end
+        
+        # f_equilibrium!(rho[ix, iy], u[ix, iy], v[ix, iy], f[i, ix, iy], c)
+        # g_equilibrium!(T_c[ix, iy], u[ix, iy], v[ix, iy], g_c[:, ix, iy])
+        # g_equilibrium!(T_s[ix, iy], 0.0, 0.0, g_s[:, ix, iy])
 
-		f_equilibrium!(rho[ix, iy], u[ix, iy], v[ix, iy], f_eq)
-		g_equilibrium!(T_c[ix, iy], u[ix, iy], v[ix, iy], g_c_eq)
-		g_equilibrium!(T_s[ix, iy], 0.0, 0.0, g_s_eq)
-
-		for i in 1:9
-			f[i, ix, iy] = f_eq[i]
-			g_c[i, ix, iy] = g_c_eq[i]
-			g_s[i, ix, iy] = g_s_eq[i]
-		end
-	end
+        # for i in 1:9
+        # 	f[i, ix, iy] = f_eq[i]
+        # 	g_c[i, ix, iy] = g_c_eq[i]
+        # 	g_s[i, ix, iy] = g_s_eq[i]
+        # end
 	return nothing
 end
 
 @parallel_indices (ix, iy) function f_relax!(f, tau_f, rho, u, v)
 
-	# f_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
-	f_eqs = zeros(Float64, 9)
-	if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
+        	# f_eqs = [zeros(Float64, 9) for i in 1:Threads.nthreads()]
+        	f_eqs = zeros(Float64, 9)
+        	if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
 		f_equilibrium!(rho[ix, iy], u[ix, iy], v[ix, iy], f_eqs)
 
 
@@ -162,27 +174,36 @@ end
 	return nothing
 end
 
+
+@noinline function getc1(i)
+    return c[i, 1]
+end
+
+
 @parallel_indices (ix, iy) function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
-	if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
-		rho[ix, iy] = 0
-		u[ix, iy] = 0
-		v[ix, iy] = 0
-		P[ix, iy] = 0
-		T_c[ix, iy] = 0
-		T_s[ix, iy] = 0
 
-		for i in 1:9
-			rho[ix, iy] += f[i, ix, iy]
-			u[ix, iy] += c[i, 1] * f[i, ix, iy]
-			v[ix, iy] += c[i, 2] * f[i, ix, iy]
-			P[ix, iy] += 3 * (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy])^2 * f[i, ix, iy]
-			T_c[ix, iy] += g_c[i, ix, iy]
-			T_s[ix, iy] += g_s[i, ix, iy]
-		end
+                
 
-		u[ix, iy] /= rho[ix, iy]
-		v[ix, iy] /= rho[ix, iy]
-	end
+	rho[ix, iy] = 0
+	u[ix, iy] = 0
+	v[ix, iy] = 0
+	P[ix, iy] = 0
+	T_c[ix, iy] = 0
+	T_s[ix, iy] = 0
+
+           
+            for i in 1:9
+                rho[ix, iy] += f[i, ix, iy]
+                u[ix, iy] += getc1(i) * f[i, ix, iy]
+                # v[ix, iy] += c[i, 2] * f[i, ix, iy]
+                # P[ix, iy] += 3 * (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy])^2 * f[i, ix, iy]
+                T_c[ix, iy] += g_c[i, ix, iy]
+                T_s[ix, iy] += g_s[i, ix, iy]
+            end
+
+	u[ix, iy] /= rho[ix, iy]
+	v[ix, iy] /= rho[ix, iy]
+
 	return nothing
 end
 
@@ -245,7 +266,6 @@ y = range(0, stop = L_y, length = n_y)
 
 @parallel_indices (i, j) function init!(u,v,T_c,T_s,gamma,Q_s)
 
-    
 
 	if i >= 1 && i <= n_x && j >= 1 && j <= n_y
 
@@ -323,10 +343,11 @@ function main()
 
 	dQ = @zeros(n_x, n_y)
 
-    @show typeof.([u, v, T_c, T_s, gamma, Q_s])
+
+    @show typeof.([u, v, T_c, T_s, gamma, Q_s, c])
     
-    @parallel init!(u, v, T_c, T_s, gamma, Q_s)
-    @parallel init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
+    @parallel (1:n_x, 1:n_y) init!(u, v, T_c, T_s, gamma, Q_s)
+    @parallel (1:n_x, 1:n_y) init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s, c, w)
 
 	
 
@@ -337,43 +358,43 @@ function main()
 
 
 	for t in 1:n_t
-		@parallel compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+		# @parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
 
 		#v .+= 0.2 * dt
-		@parallel cs_coupling!(T_c, T_s, dQ)
-		@parallel apply_heat_source!(rho, T_s, Q_s + dQ)
-		@parallel apply_heat_source!(rho, T_c, -dQ)
+		# @parallel (1:n_x, 1:n_y) cs_coupling!(T_c, T_s, dQ)
+		# @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_s, Q_s + dQ)
+		# @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_c, -dQ)
 
-		@parallel f_relax!(f, tau_f, rho, u, v)
+		# @parallel (1:n_x, 1:n_y) f_relax!(f, tau_f, rho, u, v)
 
-		@parallel apply_damping!(f, rho, u, v, ag)
+		# @parallel (1:n_x, 1:n_y) apply_damping!(f, rho, u, v, ag)
 
-		@parallel g_c_relax!(g_c, tg, T_c, u, v, T_ref)
-		@parallel g_s_relax!(g_s, T_s, T_ref)
+		# @parallel (1:n_x, 1:n_y) g_c_relax!(g_c, tg, T_c, u, v, T_ref)
+		# @parallel (1:n_x, 1:n_y) g_s_relax!(g_s, T_s, T_ref)
 
-		@parallel stream!(f, f_dash)
-		@parallel stream!(g_c, g_c_dash)
-		@parallel stream!(g_s, g_s_dash)
+		# @parallel (1:n_x, 1:n_y) stream!(f, f_dash)
+		# @parallel (1:n_x, 1:n_y) stream!(g_c, g_c_dash)
+		# @parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash)
 
 
-		@parallel memcpy!(f, f_dash)
-		@parallel memcpy!(g_c, g_c_dash)
-		@parallel memcpy!(g_s, g_s_dash)
+		# @parallel (1:n_x, 1:n_y) memcpy!(f, f_dash)
+		# @parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
+		# @parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
 
 		print("Time: $(t * dt)\r")
 
 		if t % 100 == 0
 
 
-			T_c_hm = heatmap(x, y, transpose(T_c))
-			T_s_hm = heatmap(x, y, transpose(T_s))
-			v_hm = heatmap(x, y, transpose(v), clim = (0, 0.15))
+			# T_c_hm = heatmap(x, y, transpose(T_c))
+			# T_s_hm = heatmap(x, y, transpose(T_s))
+			# v_hm = heatmap(x, y, transpose(v), clim = (0, 0.15))
 
 
 
-			p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
+			# p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
 
-			savefig("run/$(lpad(t, 4, '0')).png")
+			# savefig("run/$(lpad(t, 4, '0')).png")
 			# display(p)
 
 			#println("Time: $ti")
