@@ -4,7 +4,7 @@ using Plots
 using .Threads
 using ParallelStencil
 using ParallelStencil.FiniteDifferences2D
-const USE_GPU = false
+const USE_GPU = true
 
 @static if USE_GPU
 	@init_parallel_stencil(CUDA, Float32, 2)
@@ -39,10 +39,10 @@ const kappa_cs = 0.0005
 const resolution = 200
 const nu = 0.0001
 const t_end = 100.0
-const v_0 = 0.2
+const v_0 = 0.3
 
 
-## Dependent Parameters
+## Dependent Parameters]
 
 const n_x = L_x * resolution
 const n_y = L_y * resolution
@@ -249,19 +249,21 @@ y = range(0, stop = L_y, length = n_y)
 
 	if i >= 1 && i <= n_x && j >= 1 && j <= n_y
 
-		xl = (i - 1 + 0.5) * dx
-		yl = (j - 1 + 0.5) * dx
+        xl = (i - 1 + 0.5) * dx
+        yl = (j - 1 + 0.5) * dx
 
-		u[i, j] = 0
-		v[i, j] = 0.1 #xl < 0.5*L_x ? 0.1 : -0.1
-		T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
-		T_s[i, j] = 0
-		# central gamma obstacle
-		#if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
-        
-		gamma[i, j] = (1 .- 1.0 * exp(-((xl - 0.5)^2 + (yl - 0.5)^2) * 1000.0))
+        u[i, j] = 0.01 * randn()
+        v[i, j] = v_0 #xl < 0.5*L_x ? 0.1 : -0.1
+        T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
+        T_s[i, j] = 0
+        # central gamma obstacle
+        #if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
+        if(xl - 0.5)^2 + (yl - 0.25)^2 < 0.03^2
+            gamma[i, j] = 0.0
+        end
+      
 
-		Q_s[i, j] = exp(-((xl - 0.5)^2 + (yl - 0.1)^2) * 10000.0) * 10.0 - exp(-((xl - 0.5)^2 + (yl - 0.9)^2) * 10000.0) * 10.0
+        Q_s[i, j] = exp(-((xl - 0.5)^2 + (yl - 0.1)^2) * 10000.0) * 10.0 - exp(-((xl - 0.5)^2 + (yl - 0.9)^2) * 10000.0) * 10.0
 
 	end
 	return nothing
