@@ -285,14 +285,13 @@ end
     return nothing
 end
 
-function memcpy(dst, src)
-    Threads.@threads for i in 1:n_x
-        for j in 1:n_y
+@parallel_indices (i,j) function memcpy!(dst, src)
+    if i >= 1 && i <= n_x && j >= 1 && j <= n_y
             for k in 1:9
                 dst[k, i, j] = src[k, i, j]
             end
-        end
     end
+    return nothing
 end
 
 function main() 
@@ -339,9 +338,9 @@ function main()
         @parallel stream!(g_s, g_s_dash)
         
 
-        memcpy(f, f_dash)
-        memcpy(g_c, g_c_dash)
-        memcpy(g_s, g_s_dash)
+        @parallel memcpy!(f, f_dash)
+        @parallel memcpy!(g_c, g_c_dash)
+        @parallel memcpy!(g_s, g_s_dash)
         
         print("Time: $(t * dt)\r")
 
