@@ -121,9 +121,8 @@ end
 end
 
 # equation 20
-function apply_damping!(f, rho, u, v, alpha_gamma)
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
+@parallel_indices (ix,iy) function apply_damping!(f, rho, u, v, alpha_gamma)
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
 
             #u[ix,iy] /= (1 + alpha_gamma[ix, iy]*dt*3)
             #v[ix,iy] /= (1 + alpha_gamma[ix, iy]*dt*3)
@@ -132,8 +131,8 @@ function apply_damping!(f, rho, u, v, alpha_gamma)
                 c_alpha_gamma_u = (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy]) * alpha_gamma[ix, iy]
                 f[i, ix, iy] -= 3 * dx * w[i] * c_alpha_gamma_u
             end
-        end
     end
+    return nothing
 end
 
 function g_c_relax!(g, tau_g, T, u, v, T_ref)
@@ -334,7 +333,7 @@ function main()
 
         @parallel f_relax!(f, tau_f, rho, u, v)
 
-        apply_damping!(f, rho, u, v, ag)
+        @parallel apply_damping!(f, rho, u, v, ag)
        
         g_c_relax!(g_c, tg , T_c, u, v, T_ref)
         g_s_relax!(g_s, T_s, T_ref)
