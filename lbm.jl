@@ -2,7 +2,14 @@ module LBM
 
 using Plots
 using .Threads
-
+using ParallelStencil
+using ParallelStencil.FiniteDifferences2D
+const USE_GPU = false
+@static if USE_GPU
+    @init_parallel_stencil(CUDA, Float64, 2)
+else
+    @init_parallel_stencil(Threads, Float64, 2)
+end
 
 const c = [  0   0; 
              1   0;
@@ -59,7 +66,7 @@ function pow(x,y)
 end
 
 # Equation 16
-function f_equilibrium!(rho, u, v, f_eq)
+ function f_equilibrium!(rho, u, v, f_eq)
     for i in 1:9
         cu = c[i, 1] * u + c[i, 2] * v
         f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
@@ -76,11 +83,11 @@ function g_equilibrium!(T, u, v, g_eq)
 	end
 end
 
-function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
+@parallel_indices (ix,iy) function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
     
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
-
+    # Threads.@threads for ix in 1:n_x
+    #     for iy in 1:n_y
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
             f_eq = zeros(Float64, 9)
             g_c_eq = zeros(Float64, 9)
             g_s_eq = zeros(Float64, 9)
@@ -94,8 +101,8 @@ function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
                 g_c[i, ix, iy] = g_c_eq[i]
                 g_s[i, ix, iy] = g_s_eq[i]
             end
-        end
     end
+    return nothing
 end
 
 function f_relax!(f, tau_f, rho, u, v)
@@ -161,9 +168,8 @@ function g_s_relax!(g, T, T_ref)
     end
 end
 
-function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
-    Threads.@threads for ix in 1:n_x
-        for iy in 1:n_y
+@parallel_indices (ix,iy) function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+    if ix >= 1 && ix <= n_x && iy >= 1 && iy <= n_y
             rho[ix, iy] = 0
             u[ix, iy] = 0
             v[ix, iy] = 0
@@ -182,8 +188,8 @@ function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
 
             u[ix, iy] /= rho[ix, iy]
             v[ix, iy] /= rho[ix, iy]
-        end
     end
+    return nothing
 end
 
 function apply_heat_source!(rho, T, source)
@@ -310,24 +316,24 @@ function main()
 
     println("Number of threads: $(Threads.nthreads())")
 
-    f = zeros(Float64, 9, n_x, n_y)
-    g_c = zeros(Float64, 9, n_x, n_y)
-    g_s = zeros(Float64, 9, n_x, n_y)
+    f = @zeros(9, n_x, n_y)
+    g_c = @zeros(9, n_x, n_y)
+    g_s = @zeros(9, n_x, n_y)
 
-    f_dash = zeros(Float64, 9, n_x, n_y)
-    g_c_dash = zeros(Float64, 9, n_x, n_y)
-    g_s_dash = zeros(Float64, 9, n_x, n_y)
+    f_dash = @zeros(9, n_x, n_y)
+    g_c_dash = @zeros(9, n_x, n_y)
+    g_s_dash = @zeros(9, n_x, n_y)
 
-    dQ = zeros(Float64, n_x, n_y)
+    dQ = @zeros(n_x, n_y)
 
-    init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
+    @parallel init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
 
     ag = alpha_gamma(gamma)
     tg = tau_g(K_gamma(gamma))
 
 
     for t in 1:n_t
-        compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+        @parallel compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
 
         #v .+= 0.2 * dt
         cs_coupling!(T_c, T_s, dQ)
@@ -375,3 +381,4 @@ function main()
 end
 
 end # module
+LBM.main()
