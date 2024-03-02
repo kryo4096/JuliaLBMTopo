@@ -1,7 +1,7 @@
 module LBM
 
 using Plots
-
+using .Threads
 
 
 const c = [  0   0; 
@@ -21,18 +21,18 @@ const L_x = 1
 const L_y = 1
 
 const Ht = 150e-6
-const Htfactor = 2e2
-const ramp_p = 30.0
-const ramp_k = 30.0
-const K_f = 0.0005
-const K_s = 0.002
-const kappa_sc = 0.0001
-const kappa_cs = 0.0001
+const Htfactor = 2e6
+const ramp_p = 1e-6
+const ramp_k = 1e-6
+const K_f = 0.0001
+const K_s = 0.05
+const K_sub = 0.005
+const kappa_cs = 0.005
 
-const resolution = 100
 
-const nu = 0.01
-const K = 0.0001    
+const resolution = 500
+
+const nu = 0.0001
 
 const t_end = 10.0
 
@@ -44,13 +44,19 @@ const n_y = L_y * resolution
 const dx = 1 / resolution
 
 const tau_f = 3 * nu / dx + 0.5
+
+print(tau_f)
+
 # const tau_g = 3 * K / dx + 0.5
-const tau_g_s = 3 * K_s / dx + 0.5
+const tau_g_s = 3 * K_sub / dx + 0.5
 
 const dt = dx
 
 const n_t = Int(t_end / dt)
 
+function pow(x,y)
+    return x^y
+end
 
 # Equation 16
 function f_equilibrium(rho, u, v)
@@ -59,6 +65,8 @@ function f_equilibrium(rho, u, v)
     for i in 1:9
         cu = c[i, 1] * u + c[i, 2] * v
         f_eq[i] = w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
+
+        #f_eq[i] = w[i] * rho * (2 - sqrt(1 + 3 * u^2) ) * (2-sqrt(1+3*v^2)) * pow((2*u+ sqrt(1 + 3*u^2)) / (1-u), c[i,1]) * pow((2 * v + sqrt(1+ 3 * v^2)) / (1-v), c[i,2]);
     end
 
     return f_eq
@@ -77,7 +85,8 @@ function g_equilibrium(T, u, v)
 end
 
 function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
-    for ix in 1:n_x
+    
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
 
             f_eq = f_equilibrium(rho[ix, iy], u[ix, iy], v[ix, iy])
@@ -94,9 +103,11 @@ function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
 end
 
 function f_relax!(f, tau_f, rho, u, v)
-    for ix in 1:n_x
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
             f_eq = f_equilibrium(rho[ix,iy], u[ix,iy], v[ix,iy])
+
+            #f_mirror = 2 * f_eq - f[:,ix,iy]
 
             for i in 1:9
                 f[i,ix,iy] -= 1/tau_f * (f[i,ix,iy] - f_eq[i])
@@ -107,9 +118,12 @@ end
 
 # equation 20
 function apply_damping!(f, rho, u, v, alpha_gamma)
-    for ix in 1:n_x
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
-            
+
+            #u[ix,iy] /= (1 + alpha_gamma[ix, iy]*dt*3)
+            #v[ix,iy] /= (1 + alpha_gamma[ix, iy]*dt*3)
+
             for i in 1:9
                 c_alpha_gamma_u = (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy]) * alpha_gamma[ix, iy]
                 f[i, ix, iy] -= 3 * dx * w[i] * c_alpha_gamma_u
@@ -119,7 +133,7 @@ function apply_damping!(f, rho, u, v, alpha_gamma)
 end
 
 function g_c_relax!(g, tau_g, T, u, v, T_ref)
-    for ix in 1:n_x
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
             g_eq = g_equilibrium(T[ix,iy], u[ix,iy], v[ix,iy])
 
@@ -131,7 +145,7 @@ function g_c_relax!(g, tau_g, T, u, v, T_ref)
 end
 
 function g_s_relax!(g, T, T_ref)
-    for ix in 1:n_x
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
             g_eq = g_equilibrium(T[ix,iy], 0, 0)
 
@@ -142,35 +156,40 @@ function g_s_relax!(g, T, T_ref)
     end
 end
 
-function compute_moments!(f, g, rho, u, v, T)
-    for ix in 1:n_x
+function compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
             rho[ix, iy] = 0
             u[ix, iy] = 0
             v[ix, iy] = 0
-            T[ix, iy] = 0
+            P[ix, iy] = 0
+            T_c[ix, iy] = 0
+            T_s[ix, iy] = 0
+
             for i in 1:9
                 rho[ix, iy] += f[i, ix, iy]
                 u[ix, iy] += c[i, 1] * f[i, ix, iy]
                 v[ix, iy] += c[i, 2] * f[i, ix, iy]
-                T[ix, iy] += g[i, ix, iy]
+                P[ix, iy] += 3 * (c[i, 1] * u[ix, iy] + c[i, 2] * v[ix, iy])^2 * f[i, ix, iy]
+                T_c[ix, iy] += g_c[i, ix, iy]
+                T_s[ix, iy] += g_s[i, ix, iy]
             end
 
             u[ix, iy] /= rho[ix, iy]
+            v[ix, iy] /= rho[ix, iy]
         end
     end
 end
 
-
-
 function apply_heat_source!(rho, T, source)
-    for ix in 1:n_x
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
             
             x = (ix - 1) * dx
             y = (iy - 1) * dx
 
             T[ix, iy] += source[ix,iy] * dt
+
         end
     end
 end
@@ -189,7 +208,7 @@ function bindex(i)
 end
 
 function stream!(pop_old, pop_new)
-    for ix in 1:n_x
+    Threads.@threads for ix in 1:n_x
         for iy in 1:n_y
             for i in 1:9
                 
@@ -235,32 +254,54 @@ u = zeros(Float64, n_x, n_y)
 v = zeros(Float64, n_x, n_y)
 T_c = zeros(Float64, n_x, n_y)
 T_s = zeros(Float64, n_x, n_y)
+P = zeros(Float64, n_x, n_y)
 # Reference temperature field
 
 T_ref = zeros(Float64, n_x, n_y)
 
-Q = zeros(Float64, n_x, n_y)
+Q_s = zeros(Float64, n_x, n_y)
+Q_c = zeros(Float64, n_x, n_y)
 
-for i in 1:n_x
+Threads.@threads for i in 1:n_x
     for j in 1:n_y
         xl = (i - 1 + 0.5) * dx
         yl = (j - 1 + 0.5) * dx
 
         u[i, j] = 0
-        v[i, j] = 0.03 #xl < 0.5*L_x ? 0.1 : -0.1
-        T[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
+        v[i, j] = 0.1 #xl < 0.5*L_x ? 0.1 : -0.1
+        T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
+        T_s[i, j] = 0
         # central gamma obstacle
         #if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
-        gamma[i, j] = 1 .- exp(-((x[i] - 0.5)^2 + (y[j] - 0.5)^2) * 1000.0)
+        gamma[i, j] = (1 .- 1.0*exp(-((x[i] - 0.5)^2 + (y[j] - 0.5)^2) * 1000.0))
 
-        Q[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.5)^2) * 1000.0) * 100.0
+        Q_s[i, j] = exp(-((x[i] - 0.5)^2 + (y[j] - 0.1)^2) * 10000.0) * 10.0 - exp(-((x[i] - 0.5)^2 + (y[j] - 0.9)^2) * 10000.0) * 10.0
+    end
+end
+
+function cs_coupling!(T_c, T_s, dQ)
+    Threads.@threads for i in 1:n_x
+        for j in 1:n_y
+            dQ[i, j] = kappa_cs * (T_c[i, j] - T_s[i, j])
+        end
+    end
+end
+
+function memcpy(dst, src)
+    Threads.@threads for i in 1:n_x
+        for j in 1:n_y
+            for k in 1:9
+                dst[k, i, j] = src[k, i, j]
+            end
+        end
     end
 end
 
 function main() 
 
     `rm run/'*'`
-    ENV["GKSwstype"]="nul"; loadpath = "./run/"; anim = Animation(loadpath,String[]); println("Animation directory: $(anim.dir)")
+
+    ENV["GKSwstype"]="nul";
 
     f = zeros(Float64, 9, n_x, n_y)
     g_c = zeros(Float64, 9, n_x, n_y)
@@ -270,44 +311,56 @@ function main()
     g_c_dash = zeros(Float64, 9, n_x, n_y)
     g_s_dash = zeros(Float64, 9, n_x, n_y)
 
+    dQ = zeros(Float64, n_x, n_y)
+
     init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s)
 
     ag = alpha_gamma(gamma)
     tg = tau_g(K_gamma(gamma))
 
-   
 
     anim = @animate for t in 1:n_t
-        compute_moments!(f, g_c, rho, u, v, T)
-        apply_heat_source!(rho, T_s, Q)
+        compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s)
+
+        #v .+= 0.2 * dt
+        cs_coupling!(T_c, T_s, dQ)
+        apply_heat_source!(rho, T_s, Q_s + dQ)
+        apply_heat_source!(rho, T_c, -dQ)
+
         f_relax!(f, tau_f, rho, u, v)
+
         apply_damping!(f, rho, u, v, ag)
+       
         g_c_relax!(g_c, tg , T_c, u, v, T_ref)
         g_s_relax!(g_s, T_s, T_ref)
 
         stream!(f, f_dash)
         stream!(g_c, g_c_dash)
         stream!(g_s, g_s_dash)
+        
 
-        f .= f_dash
-        g .= g_dash
+        memcpy(f, f_dash)
+        memcpy(g_c, g_c_dash)
+        memcpy(g_s, g_s_dash)
         
         
-        if t % 10 == 0
+        if t % 1000 == 0
             ti = t * dt
-
-            T_c_hm = heatmap(x, y, transpose(log.(abs.(T_c))), clim=(-10, 0))
-            T_s_hm = heatmap(x, y, transpose(log.(abs.(T_s))), clim=(-10, 0))
-
-            v_hm = heatmap(x, y, transpose(v), clim=(0, 0.06))
-
-            plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3))
-
-            savefig("run/$(lpad(t, 4, '0')).png")
-
-
+            
+            
+            T_c_hm = heatmap(x, y, transpose(T_c))
+            T_s_hm = heatmap(x, y, transpose(T_s))
+            v_hm = heatmap(x, y, transpose(v), clim = (0, 0.15))
             
             print("Time: $ti\r")
+
+            p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
+
+            savefig("run/$(lpad(t, 4, '0')).png")
+            # display(p)
+
+            #println("Time: $ti")
+            
         end
     end
 
