@@ -29,7 +29,7 @@ const K_f = 0.00001
 const K_s = 0.0005
 const K_sub = 0.0005
 const kappa_cs = 0.0005
-const resolution = 200
+const resolution = 400
 const nu = 0.0001
 const t_end = 100.0
 
@@ -251,7 +251,12 @@ function main()
 	`rm run/'*'`
 
 	ENV["GKSwstype"] = "nul"
-
+        
+        if USE_GPU
+            println("Using GPU")
+        else
+            println("Using CPU")
+        end
 
 	println("Number of threads: $(Threads.nthreads())")
 
