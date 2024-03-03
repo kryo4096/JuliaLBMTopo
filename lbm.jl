@@ -4,7 +4,8 @@ using Plots
 using .Threads
 using ParallelStencil
 using ParallelStencil.FiniteDifferences2D
-const USE_GPU = false
+using CoherentNoise
+const USE_GPU = true
 
 @static if USE_GPU
 	@init_parallel_stencil(CUDA, Float32, 2)
@@ -17,21 +18,22 @@ const c = Data.Array([0 0;1 0;0 1;-1 0;0 -1;1 1;-1 1;-1 -1;1 -1])
 const w = Data.Array([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
 
 ## PARAMETERS
-const L_x = 1
+const L_x = 2
 const L_y = 1
 
 const Ht = 150e-6
 const Htfactor = 2e1
 const ramp_p = 1e-6
 const ramp_k = 1e-6
-const K_f = 0.00001
+const K_f = 0.0001
 const K_s = 0.0005
 const K_sub = 0.0005
-const kappa_cs = 0.0005
-const resolution = 200
-const nu = 0.0001
-const t_end = 100.0
-
+const kappa_cs = 1.0
+const kappa_fs = 0.05
+const kappa_ps = 1.0
+const resolution = 1000
+const nu = 0.00001
+const t_end = 200.0
 const v_0 = 0.2
 
 
@@ -58,30 +60,13 @@ function pow(x, y)
 	return x^y
 end
 
-
-
 function f_eq_i(rho, u, v, i, c, w)
-	cu = c[i, 1] * u + c[i, 2] * v
-	return w[i] * rho * (1 + 3 * cu + 9 / 2 * cu^2 - 3 / 2 * (u^2 + v^2))
-end
-# Equation 16
-function f_equilibrium!(rho, u, v, f_eq, c)
-
-	for i in 1:9
-			f_eq[i] = f_eq_i(rho, u, v, i, c)
-	end
+	return  w[i] * rho * (2 - sqrt(1 + 3 * u^2)) * (2 - sqrt(1 + 3 * v^2)) * pow((2 * u + sqrt(1 + 3 * u^2)) / (1 - u), c[i, 1]) * pow((2 * v + sqrt(1 + 3 * v^2)) / (1 - v), c[i, 2])
 end
 
 function g_eq_i(T, u, v, i,  c, w)
     cu = c[i, 1] * u + c[i, 2] * v
    return w[i] * T * (1 + 3 * cu)
-end
-
-# Equation 17
-function g_equilibrium!(T, u, v, g_eq, c, w)
-	for i in 1:9
-            g_eq[i] = g_eq_i(T, u, v, c, w)
-	end
 end
 
 @parallel_indices (ix, iy) function init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s, c, w)
@@ -120,7 +105,7 @@ end
 	return nothing
 end
 
-@parallel_indices (ix, iy) function g_c_relax!(g, tau_g, T, u, v, T_ref, c, w)
+@parallel_indices (ix, iy) function g_c_relax!(g, tau_g, T, u, v,  c, w)
 	for i in 1:9
 		g[i, ix, iy] -= 1 / tau_g[ix, iy] * (g[i, ix, iy] - g_eq_i(T[ix, iy], u[ix, iy], v[ix, iy], i, c, w))
 	end
@@ -128,7 +113,7 @@ end
 	return nothing
 end
 
-@parallel_indices (ix, iy) function g_s_relax!(g, T, T_ref, c, w)
+@parallel_indices (ix, iy) function g_s_relax!(g, T, c, w)
 
 	for i in 1:9
 		g[i, ix, iy] -= 1 / tau_g_s * (g[i, ix, iy] - g_eq_i(T[ix, iy], 0, 0, i, c, w))
@@ -146,8 +131,6 @@ end
 	T_c[ix, iy] = 0
 	T_s[ix, iy] = 0
 
-        
-           
 	for i in 1:9
 		rho[ix, iy] += f[i, ix, iy]
 		u[ix, iy] += c[i, 1] * f[i, ix, iy]
@@ -186,9 +169,16 @@ end
 
 @parallel_indices (ix, iy) function stream!(pop_old, pop_new, c, w)
 	for i in 1:9
-                ix_new = mod1(ix - Int64(c[i, 1]), n_x)
-                iy_new = mod1(iy - Int64(c[i, 2]), n_y)
-		pop_new[i, ix, iy] = pop_old[i, ix_new, iy_new]
+        iy_new = iy - c[i, 2]
+
+
+        if iy_new < 1 || iy_new > n_y
+            pop_new[i, ix, iy] = pop_old[bindex(i), ix, iy]
+        else
+            iy_new = mod1(iy - Int64(c[i, 2]), n_y)
+            ix_new = mod1(ix - Int64(c[i, 1]), n_x)
+            pop_new[i, ix, iy] = pop_old[i, ix_new, iy_new]
+        end
 
 	end
 	return nothing
@@ -203,6 +193,10 @@ function K_gamma(gamma)
 	return @. K_f + (K_s - K_f) * ramp_k * (1 - gamma) / (ramp_k + gamma)
 end
 
+function kappa_gamma(gamma)
+	return @. kappa_fs + (kappa_cs - kappa_fs) * ramp_k * (1 - gamma) / (ramp_k + gamma)
+end
+
 function tau_g(K_gamma)
 	return @. 3 * K_gamma / dx + 0.5
 end
@@ -210,51 +204,55 @@ end
 
 
 
-@parallel_indices (i, j) function init!(u,v,T_c,T_s,gamma,Q_s)
+@parallel_indices (i, j) function init!(u,v,T_c,T_s,gamma,power, noise)
 
         xl = (i - 1 + 0.5) * dx
         yl = (j - 1 + 0.5) * dx
 
-        u[i, j] = 0.01 * randn()
-        v[i, j] = v_0 #xl < 0.5*L_x ? 0.1 : -0.1
-        T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
-        T_s[i, j] = 0
-        # central gamma obstacle
-        #if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
-        if(xl - 0.5)^2 + (yl - 0.25)^2 < 0.03^2
-            gamma[i, j] = 0.0
-        end
-      
+        u[i, j] = 0.0
+		v[i, j] = 0.0
+		T_c[i, j] = 0 #exp(-((x[i] - 0.5)^2 + (y[j] - 0.25)^2) * 1000.0)
+		T_s[i, j] = 0
+		# central gamma obstacle
+		#if (xl - 0.5)^2 + (yl - 0.25)^2 < 0.1^2
 
-        Q_s[i, j] = exp(-((xl - 0.5)^2 + (yl - 0.1)^2) * 10000.0) * 10.0 - exp(-((xl - 0.5)^2 + (yl - 0.9)^2) * 10000.0) * 10.0
+		radius = sqrt((xl - 1.0)^2 + (yl - 0.5)^2)
 
+        if radius < 0.2
+			#Q_s[i, j] = 10.0
+			power[i, j] = 20.0
+		end
+
+        a = exp(-radius^2 * 100.0)
+
+		if abs(xl - 1.0) < 0.3
+			if noise[i,j] > 0.7 #mod(yl+0.05*sin(xl*2*pi),0.1) > 0.05
+				gamma[i, j] = 0.0
+			end
+		end
 	return nothing
 end
 
 
 @parallel_indices (i, j) function cs_coupling!(T_c, T_s, dQ)
-	dQ[i, j] = kappa_cs * (T_c[i, j] - T_s[i, j])
+	dQ[i, j] = (T_c[i, j] - T_s[i, j])
 	return nothing
 end
 
-@parallel_indices (i, j) function memcpy!(dst, src)
-	for k in 1:9
-		dst[k, i, j] = src[k, i, j]
+@parallel_indices (i,j) function fix_temp!(T, T_ref)
+    if (i - 1 + 0.5) * dx < 0.5
+        T[i, j] = T_ref
 	end
-	return nothing
+    return nothing
 end
 
-@parallel_indices (i, j) function fmemcpy!(dst, src)
-        dst[i, j] = src[i, j]
-        return nothing
-end
 
 
 function main()
 
-    `rm run/'*'`
+    #`rm run/'*'`
 
-    ENV["GKSwstype"] = "nul"
+    #ENV["GKSwstype"] = "nul"
         
     if USE_GPU
         println("Using GPU")
@@ -278,8 +276,6 @@ function main()
     P = @zeros(n_x, n_y)
     # Reference temperature field
 
-    T_ref = @zeros(n_x, n_y)
-
     Q_s = @zeros(n_x, n_y)
     Q_c = @zeros(n_x, n_y)
 
@@ -290,6 +286,8 @@ function main()
     f_dash = @zeros(9, n_x, n_y)
     g_c_dash = @zeros(9, n_x, n_y)
     g_s_dash = @zeros(9, n_x, n_y)
+
+    power = @zeros(n_x, n_y)
 
     dQ = @zeros(n_x, n_y)
 
@@ -302,64 +300,91 @@ function main()
     T_c_renh = zeros(n_x, n_y)
     T_s_renh = zeros(n_x, n_y)  
 
+    noisemap = zeros(n_x, n_y)
 
-    @show typeof.([u, v, T_c, T_s, gamma, Q_s, c])
+    noise = opensimplex2_2d()
+
+    for ix in 1:n_x
+        for iy in 1:n_y
+            xl = (ix-0.5)*dx
+            yl = (iy-0.5)*dx
+            noisemap[ix,iy] = sample(noise, 10 * xl, 10 * yl)
+        end
+    end
+
+
+    noisemap_gpu = @zeros(n_x, n_y)
+
+    copyto!(noisemap_gpu, noisemap)
+
+
     
-    @parallel (1:n_x, 1:n_y) init!(u, v, T_c, T_s, gamma, Q_s)
+    @parallel (1:n_x, 1:n_y) init!(u, v, T_c, T_s, gamma, power, noisemap_gpu)
     @parallel (1:n_x, 1:n_y) init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s, c, w)
 
 	
     ag = alpha_gamma(gamma)
     tg = tau_g(K_gamma(gamma))
+    kappa = kappa_gamma(gamma)
 
     it = 0
 
 
 
     for t in 1:n_t
-        @parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
+
+        u .+= 0.01 * dt
+
+        
+        @parallel (1:n_x, 1:n_y) fix_temp!(T_c, 0.0)
+
+
 
         @parallel (1:n_x, 1:n_y) cs_coupling!(T_c, T_s, dQ)
-        @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_s, Q_s + dQ)
+
+        dQ .*= kappa
+
+        @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_s, power * dt + dQ)
         @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_c, -dQ)
 
         @parallel (1:n_x, 1:n_y) f_relax!(f, tau_f, rho, u, v, c, w)
 
         @parallel (1:n_x, 1:n_y) apply_damping!(f, rho, u, v, ag, c, w)
 
-        @parallel (1:n_x, 1:n_y) g_c_relax!(g_c, tg, T_c, u, v, T_ref, c, w)
-        @parallel (1:n_x, 1:n_y) g_s_relax!(g_s, T_s, T_ref, c, w)
+        @parallel (1:n_x, 1:n_y) g_c_relax!(g_c, tg, T_c, u, v, c, w)
+        @parallel (1:n_x, 1:n_y) g_s_relax!(g_s, T_s, c, w)
 
         @parallel (1:n_x, 1:n_y) stream!(f, f_dash, c, w)
         @parallel (1:n_x, 1:n_y) stream!(g_c, g_c_dash, c, w)
         @parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash, c, w)
 
+        copyto!(f, f_dash)
+        copyto!(g_c, g_c_dash)
+        copyto!(g_s, g_s_dash)
 
-        copyto!(f_dash, f)
-        copyto!(g_c_dash, g_c)
-        copyto!(g_s_dash, g_s)
+        @parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
 
 
         print("Time: $(t * dt), it=$it                                           \r")
 
-        if t % 50 == 0
+        if t % 1000 == 1
 
-            copyto!(v, v_renh)
-            copyto!(T_c, T_c_renh)
-            copyto!(T_s, T_s_renh)
+            copyto!(v_renh, sqrt.(u.^2+v.^2))
+            copyto!(T_c_renh, T_c)
+            copyto!(T_s_renh, T_s)
 
-            # copyto!(v_ren, v_renh)
-            # copyto!(T_c_ren, T_c_renh)
-            # copyto!(T_s_ren, T_s_renh)       
+           # copyto!(v_ren, v_renh)
+            #copyto!(T_c_ren, T_c_renh)
+            #copyto!(T_s_ren, T_s_renh)       
 
-            T_c_hm = heatmap(x, y, transpose(T_c_renh))
-            T_s_hm = heatmap(x, y, transpose(T_s_renh))
-            v_hm = heatmap(x, y, transpose(v_renh), clim = (0, 0.5))
+            it_text = lpad(it, 4, "0")
 
-
-
-            p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
-            savefig("run/$(lpad(t, 4, '0')).png")
+			T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 1.5))
+			savefig("run/T_c_$it_text.png")
+			T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 1.5))
+			savefig("run/T_s_$it_text.png")
+			u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
+			savefig("run/u_$it_text.png")
             # display(p)
 
             it += 1
