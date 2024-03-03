@@ -146,6 +146,8 @@ end
 	P[ix, iy] = 0
 	T_c[ix, iy] = 0
 	T_s[ix, iy] = 0
+
+        
            
 	for i in 1:9
 		rho[ix, iy] += f[i, ix, iy]
@@ -181,17 +183,13 @@ function bindex(i)
 	return j
 end
 
-@inline function mymod1(a, b)
-	return (a - 1) % b + 1
-end
+
 
 @parallel_indices (ix, iy) function stream!(pop_old, pop_new, c, w)
 	for i in 1:9
-		iy_new = iy - c[i, 2]
-
-		# iy_new = (iy - c[i, 2] - 1 + n_y) % n_y + 1
-		# ix_new = (ix - c[i, 1] - 1 + n_x) % n_x + 1
-		pop_new[i, ix, iy] = pop_old[i, (ix - c[i, 1] - 1 + n_x) % n_x + 1 , iy]
+                ix_new = mod1(ix - Int64(c[i, 1]), n_x)
+                iy_new = mod1(iy - Int64(c[i, 2]), n_y)
+		pop_new[i, ix, iy] = pop_old[i, ix_new, iy_new]
 
 	end
 	return nothing
@@ -312,13 +310,13 @@ function main()
 		@parallel (1:n_x, 1:n_y) g_s_relax!(g_s, T_s, T_ref, c, w)
 
 		@parallel (1:n_x, 1:n_y) stream!(f, f_dash, c, w)
-		# @parallel (1:n_x, 1:n_y) stream!(g_c, g_c_dash, c, w)
-		# @parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash, c, w)
-# 
+		@parallel (1:n_x, 1:n_y) stream!(g_c, g_c_dash, c, w)
+		@parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash, c, w)
 
-		# @parallel (1:n_x, 1:n_y) memcpy!(f, f_dash)
-		# @parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
-		# @parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
+
+		@parallel (1:n_x, 1:n_y) memcpy!(f, f_dash)
+		@parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
+		@parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
 
 
         print("Time: $(t * dt), it=$it                                           \r")
