@@ -1,10 +1,11 @@
 module LBM
 
-using Plots
 using .Threads
 using ParallelStencil
 using ParallelStencil.FiniteDifferences2D
 using CoherentNoise
+
+using Plots
 const USE_GPU = true
 
 @static if USE_GPU
@@ -25,15 +26,15 @@ const Ht = 150e-6
 const Htfactor = 2e1
 const ramp_p = 1e-6
 const ramp_k = 1e-6
-const K_f = 0.0001
-const K_s = 0.0005
-const K_sub = 0.0005
+const K_f = 0.0002
+const K_s = 0.0007
+const K_sub = 0.0007
 const kappa_cs = 1.0
 const kappa_fs = 0.05
 const kappa_ps = 1.0
-const resolution = 500
-const nu = 1e-5
-const t_end = 200.0
+const resolution = 1000
+const nu = 5e-6
+const t_end = 20.0
 const v_0 = 0.2
 
 
@@ -220,7 +221,7 @@ end
 
         if radius < 0.2
 			#Q_s[i, j] = 10.0
-			power[i, j] = 0.1 / dx
+			power[i, j] = 0.2 / dx
 		end
 
         a = exp(-radius^2 * 100.0)
@@ -250,7 +251,6 @@ end
 
 function main()
 
-    #`rm run/'*'`
 
     #ENV["GKSwstype"] = "nul"
         
@@ -368,7 +368,7 @@ function main()
 
         print("Time: $(t * dt), it=$it, max_temp=$(maximum(T_s))                                           \r")
 
-        if t % 1000 == 1
+        if t % 200 == 1
 
             v_renh = zeros(n_x, n_y)
             T_c_renh = zeros(n_x, n_y)
@@ -382,25 +382,20 @@ function main()
             #copyto!(T_c_ren, T_c_renh)
             #copyto!(T_s_ren, T_s_renh)       
 
+           
             it_text = lpad(it, 4, "0")
-
+    
             
-
-            Threads.@spawn begin
-
-                lock(surface)
-                T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 1.5))
-                savefig("run/T_c_$it_text.png")
-                T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 1.5))
-                savefig("run/T_s_$it_text.png")
-                u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
-                savefig("run/u_$it_text.png")
-                unlock(surface)
-
+            T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 0.3))
+            savefig("run/T_c_$it_text.png")
+            T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 1.0))
+            savefig("run/T_s_$it_text.png")
+            u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
+            savefig("run/u_$it_text.png")
+        
            
             # display(p)
-                it += 1
-            end
+            it += 1
         end
     end
 
