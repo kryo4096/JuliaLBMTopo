@@ -12,7 +12,6 @@ else
 	@init_parallel_stencil(Threads, Float32, 2)
 end
 
-
 const c = Data.Array([0 0;1 0;0 1;-1 0;0 -1;1 1;-1 1;-1 -1;1 -1])
 
 const w = Data.Array([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
@@ -29,7 +28,7 @@ const K_f = 0.00001
 const K_s = 0.0005
 const K_sub = 0.0005
 const kappa_cs = 0.0005
-const resolution = 400
+const resolution = 200
 const nu = 0.0001
 const t_end = 100.0
 
@@ -208,8 +207,7 @@ function tau_g(K_gamma)
 	return @. 3 * K_gamma / dx + 0.5
 end
 
-x = range(0, stop = L_x, length = n_x)
-y = range(0, stop = L_y, length = n_y)
+
 
 
 @parallel_indices (i, j) function init!(u,v,T_c,T_s,gamma,Q_s)
@@ -248,17 +246,20 @@ end
 
 function main()
 
-	`rm run/'*'`
+    `rm run/'*'`
 
-	ENV["GKSwstype"] = "nul"
+    ENV["GKSwstype"] = "nul"
         
-        if USE_GPU
-            println("Using GPU")
-        else
-            println("Using CPU")
-        end
+    if USE_GPU
+        println("Using GPU")
+    else
+        println("Using CPU")
+    end
 
-	println("Number of threads: $(Threads.nthreads())")
+    println("Number of threads: $(Threads.nthreads())")
+
+    x = range(0, stop = L_x, length = n_x)
+    y = range(0, stop = L_y, length = n_y)    
 
     # Initial condition
     rho = @ones(n_x, n_y)
@@ -276,15 +277,15 @@ function main()
     Q_s = @zeros(n_x, n_y)
     Q_c = @zeros(n_x, n_y)
 
-	f = @zeros(9, n_x, n_y)
-	g_c = @zeros(9, n_x, n_y)
-	g_s = @zeros(9, n_x, n_y)
+    f = @zeros(9, n_x, n_y)
+    g_c = @zeros(9, n_x, n_y)
+    g_s = @zeros(9, n_x, n_y)
 
-	f_dash = @zeros(9, n_x, n_y)
-	g_c_dash = @zeros(9, n_x, n_y)
-	g_s_dash = @zeros(9, n_x, n_y)
+    f_dash = @zeros(9, n_x, n_y)
+    g_c_dash = @zeros(9, n_x, n_y)
+    g_s_dash = @zeros(9, n_x, n_y)
 
-	dQ = @zeros(n_x, n_y)
+    dQ = @zeros(n_x, n_y)
 
 
     @show typeof.([u, v, T_c, T_s, gamma, Q_s, c])
@@ -293,60 +294,52 @@ function main()
     @parallel (1:n_x, 1:n_y) init_pops!(f, g_c, g_s, rho, u, v, T_c, T_s, c, w)
 
 	
-	ag = alpha_gamma(gamma)
-	tg = tau_g(K_gamma(gamma))
+    ag = alpha_gamma(gamma)
+    tg = tau_g(K_gamma(gamma))
 
     it = 0
 
 
 
-	for t in 1:n_t
-		@parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
+    for t in 1:n_t
+        @parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
 
-		@parallel (1:n_x, 1:n_y) cs_coupling!(T_c, T_s, dQ)
-		@parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_s, Q_s + dQ)
-		@parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_c, -dQ)
+        @parallel (1:n_x, 1:n_y) cs_coupling!(T_c, T_s, dQ)
+        @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_s, Q_s + dQ)
+        @parallel (1:n_x, 1:n_y) apply_heat_source!(rho, T_c, -dQ)
 
-		@parallel (1:n_x, 1:n_y) f_relax!(f, tau_f, rho, u, v, c, w)
+        @parallel (1:n_x, 1:n_y) f_relax!(f, tau_f, rho, u, v, c, w)
 
-		@parallel (1:n_x, 1:n_y) apply_damping!(f, rho, u, v, ag, c, w)
+        @parallel (1:n_x, 1:n_y) apply_damping!(f, rho, u, v, ag, c, w)
 
-		@parallel (1:n_x, 1:n_y) g_c_relax!(g_c, tg, T_c, u, v, T_ref, c, w)
-		@parallel (1:n_x, 1:n_y) g_s_relax!(g_s, T_s, T_ref, c, w)
+        @parallel (1:n_x, 1:n_y) g_c_relax!(g_c, tg, T_c, u, v, T_ref, c, w)
+        @parallel (1:n_x, 1:n_y) g_s_relax!(g_s, T_s, T_ref, c, w)
 
-		@parallel (1:n_x, 1:n_y) stream!(f, f_dash, c, w)
-		@parallel (1:n_x, 1:n_y) stream!(g_c, g_c_dash, c, w)
-		@parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash, c, w)
+        @parallel (1:n_x, 1:n_y) stream!(f, f_dash, c, w)
+        @parallel (1:n_x, 1:n_y) stream!(g_c, g_c_dash, c, w)
+        @parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash, c, w)
 
 
-		@parallel (1:n_x, 1:n_y) memcpy!(f, f_dash)
-		@parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
-		@parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
+        @parallel (1:n_x, 1:n_y) memcpy!(f, f_dash)
+        @parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
+        @parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
 
 
         print("Time: $(t * dt), it=$it                                           \r")
 
         if t % 50 == 0
 
+            T_c_hm = heatmap(x, y, transpose(Array(T_c)))
+            T_s_hm = heatmap(x, y, transpose(Array(T_s)))
+            v_hm = heatmap(x, y, transpose(Array(v)), clim = (0, 0.5))
 
-			# T_c_hm = heatmap(x, y, transpose(T_c))
-			# T_s_hm = heatmap(x, y, transpose(T_s))
-			# v_hm = heatmap(x, y, transpose(v), clim = (0, 0.5))
-
-
-
-
-			# p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
-
-			# savefig("run/$(lpad(t, 4, '0')).png")
-
-			# display(p)
-
-			#println("Time: $ti")
+            p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
+            savefig("run/$(lpad(t, 4, '0')).png")
+            # display(p)
 
             it += 1
-		end
-	end
+        end
+    end
 
 	#gif(anim, "run/anim.gif", fps = 30)
 end
