@@ -31,8 +31,8 @@ const K_sub = 0.0005
 const kappa_cs = 1.0
 const kappa_fs = 0.05
 const kappa_ps = 1.0
-const resolution = 1000
-const nu = 0.00001
+const resolution = 500
+const nu = 1e-5
 const t_end = 200.0
 const v_0 = 0.2
 
@@ -220,7 +220,7 @@ end
 
         if radius < 0.2
 			#Q_s[i, j] = 10.0
-			power[i, j] = 20.0
+			power[i, j] = 0.1 / dx
 		end
 
         a = exp(-radius^2 * 100.0)
@@ -296,9 +296,7 @@ function main()
     # T_c_ren = @zeros(n_x, n_y)
     # T_s_ren= @zeros(n_x, n_y)
 
-    v_renh = zeros(n_x, n_y)
-    T_c_renh = zeros(n_x, n_y)
-    T_s_renh = zeros(n_x, n_y)  
+   
 
     noisemap = zeros(n_x, n_y)
 
@@ -327,7 +325,10 @@ function main()
     tg = tau_g(K_gamma(gamma))
     kappa = kappa_gamma(gamma)
 
+
     it = 0
+
+    surface = SpinLock()
 
 
 
@@ -365,9 +366,13 @@ function main()
         @parallel (1:n_x, 1:n_y) compute_moments!(f, g_c, g_s, rho, u, v, P, T_c, T_s, c)
 
 
-        print("Time: $(t * dt), it=$it                                           \r")
+        print("Time: $(t * dt), it=$it, max_temp=$(maximum(T_s))                                           \r")
 
         if t % 1000 == 1
+
+            v_renh = zeros(n_x, n_y)
+            T_c_renh = zeros(n_x, n_y)
+            T_s_renh = zeros(n_x, n_y)  
 
             copyto!(v_renh, sqrt.(u.^2+v.^2))
             copyto!(T_c_renh, T_c)
@@ -379,15 +384,23 @@ function main()
 
             it_text = lpad(it, 4, "0")
 
-			T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 1.5))
-			savefig("run/T_c_$it_text.png")
-			T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 1.5))
-			savefig("run/T_s_$it_text.png")
-			u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
-			savefig("run/u_$it_text.png")
-            # display(p)
+            
 
-            it += 1
+            Threads.@spawn begin
+
+                lock(surface)
+                T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 1.5))
+                savefig("run/T_c_$it_text.png")
+                T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 1.5))
+                savefig("run/T_s_$it_text.png")
+                u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
+                savefig("run/u_$it_text.png")
+                unlock(surface)
+
+           
+            # display(p)
+                it += 1
+            end
         end
     end
 
