@@ -244,6 +244,12 @@ end
 	return nothing
 end
 
+@parallel_indices (i, j) function fmemcpy!(dst, src)
+        dst[i, j] = src[i, j]
+        return nothing
+end
+
+
 function main()
 
     `rm run/'*'`
@@ -287,6 +293,15 @@ function main()
 
     dQ = @zeros(n_x, n_y)
 
+    # render stuff
+    v_ren = @zeros(n_x, n_y)
+    T_c_ren = @zeros(n_x, n_y)
+    T_s_ren= @zeros(n_x, n_y)
+
+    v_renh = zeros(n_x, n_y)
+    T_c_renh = zeros(n_x, n_y)
+    T_s_renh = zeros(n_x, n_y)  
+
 
     @show typeof.([u, v, T_c, T_s, gamma, Q_s, c])
     
@@ -320,18 +335,28 @@ function main()
         @parallel (1:n_x, 1:n_y) stream!(g_s, g_s_dash, c, w)
 
 
-        @parallel (1:n_x, 1:n_y) memcpy!(f, f_dash)
-        @parallel (1:n_x, 1:n_y) memcpy!(g_c, g_c_dash)
-        @parallel (1:n_x, 1:n_y) memcpy!(g_s, g_s_dash)
+        copyto!(f_dash, f)
+        copyto!(g_c_dash, g_c)
+        copyto!(g_s_dash, g_s)
 
 
         print("Time: $(t * dt), it=$it                                           \r")
 
         if t % 50 == 0
 
-            T_c_hm = heatmap(x, y, transpose(Array(T_c)))
-            T_s_hm = heatmap(x, y, transpose(Array(T_s)))
-            v_hm = heatmap(x, y, transpose(Array(v)), clim = (0, 0.5))
+            copyto!(v, v_renh)
+            copyto!(T_c, T_c_renh)
+            copyto!(T_s, T_s_renh)
+
+            # copyto!(v_ren, v_renh)
+            # copyto!(T_c_ren, T_c_renh)
+            # copyto!(T_s_ren, T_s_renh)       
+
+            T_c_hm = heatmap(x, y, transpose(T_c_renh))
+            T_s_hm = heatmap(x, y, transpose(T_s_renh))
+            v_hm = heatmap(x, y, transpose(v_renh), clim = (0, 0.5))
+
+
 
             p = plot(T_c_hm, T_s_hm, v_hm, layout = (1, 3), size = (2000, 500))
             savefig("run/$(lpad(t, 4, '0')).png")
