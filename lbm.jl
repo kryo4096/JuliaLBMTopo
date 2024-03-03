@@ -4,7 +4,7 @@ using Plots
 using .Threads
 using ParallelStencil
 using ParallelStencil.FiniteDifferences2D
-const USE_GPU = true
+const USE_GPU = false
 
 @static if USE_GPU
 	@init_parallel_stencil(CUDA, Float32, 2)
@@ -294,9 +294,9 @@ function main()
     dQ = @zeros(n_x, n_y)
 
     # render stuff
-    v_ren = @zeros(n_x, n_y)
-    T_c_ren = @zeros(n_x, n_y)
-    T_s_ren= @zeros(n_x, n_y)
+    # v_ren = @zeros(n_x, n_y)
+    # T_c_ren = @zeros(n_x, n_y)
+    # T_s_ren= @zeros(n_x, n_y)
 
     v_renh = zeros(n_x, n_y)
     T_c_renh = zeros(n_x, n_y)
@@ -370,4 +370,4 @@ function main()
 end
 
 end # module
-LBM.main()
+@time LBM.main()
