@@ -5,7 +5,9 @@ using ParallelStencil
 using ParallelStencil.FiniteDifferences2D
 using CoherentNoise
 
-using Plots
+using ImageIO
+using FileIO
+
 const USE_GPU = true
 
 @static if USE_GPU
@@ -32,9 +34,10 @@ const K_sub = 0.0007
 const kappa_cs = 1.0
 const kappa_fs = 0.05
 const kappa_ps = 1.0
-const resolution = 1000
-const nu = 5e-6
-const t_end = 20.0
+
+const resolution = 100
+const nu = 0.00003
+const t_end = 100.0
 const v_0 = 0.2
 
 
@@ -55,7 +58,7 @@ const tau_g_s = 3 * K_sub / dx + 0.5
 
 const dt = dx
 
-const n_t = Int(t_end / dt)
+const n_t = Int64(t_end / dt)
 
 function pow(x, y)
 	return x^y
@@ -249,6 +252,16 @@ end
 
 
 
+@parallel_indices (i, j) function heatmap_para!(image, array, min_val, max_val)
+    # red1 = [0.13572138, 4.61539260, -42.66032258, 132.13108234] 
+    for k in 1:3
+        image[j, i, k] = clamp((array[i, j] - min_val) / (max_val - min_val), 0, 1)
+    end
+    
+    return nothing
+end
+
+
 function main()
 
 
@@ -295,6 +308,9 @@ function main()
     # v_ren = @zeros(n_x, n_y)
     # T_c_ren = @zeros(n_x, n_y)
     # T_s_ren= @zeros(n_x, n_y)
+    v_img = @zeros(n_y, n_x, 3)
+    T_c_img = @zeros(n_y, n_x, 3)
+    T_s_img = @zeros(n_y, n_x, 3)
 
    
 
@@ -368,15 +384,20 @@ function main()
 
         print("Time: $(t * dt), it=$it, max_temp=$(maximum(T_s))                                           \r")
 
-        if t % 200 == 1
 
-            v_renh = zeros(n_x, n_y)
-            T_c_renh = zeros(n_x, n_y)
-            T_s_renh = zeros(n_x, n_y)  
+        if t % 50 == 1
+            
+            @parallel (1:n_x, 1:n_y) heatmap_para!(v_img, sqrt.(u.^2+v.^2), 0, 0.3)
+            @parallel (1:n_x, 1:n_y) heatmap_para!(T_c_img, T_c, 0, 0.8)
+            @parallel (1:n_x, 1:n_y) heatmap_para!(T_s_img, T_s, 0, 0.8)
+            
+            v_renh = zeros( n_y, n_x, 3)
+            T_c_renh = zeros(n_y, n_x, 3)
+            T_s_renh = zeros(n_y, n_x, 3)  
 
-            copyto!(v_renh, sqrt.(u.^2+v.^2))
-            copyto!(T_c_renh, T_c)
-            copyto!(T_s_renh, T_s)
+            copyto!(v_renh, v_img)
+            copyto!(T_c_renh, T_c_img)
+            copyto!(T_s_renh, T_s_img)
 
            # copyto!(v_ren, v_renh)
             #copyto!(T_c_ren, T_c_renh)
@@ -384,18 +405,27 @@ function main()
 
            
             it_text = lpad(it, 4, "0")
-    
-            
-            T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 0.3))
-            savefig("run/T_c_$it_text.png")
-            T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 1.0))
-            savefig("run/T_s_$it_text.png")
-            u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
-            savefig("run/u_$it_text.png")
-        
+
+
+            save("run/u_$it_text.png", v_renh)
+            save("run/T_c_$it_text.png", T_c_renh)
+            save("run/T_s_$it_text.png", T_s_renh)
+
+            # Threads.@spawn begin
+
+                # u_hm = heatmap(x, y, transpose(v_renh), size = (1000, 400), clim=(0,0.3))
+                # savefig("run/u_$it_text.png")           #     lock(surface)
+                # T_c_hm = heatmap(x, y, transpose(T_c_renh), size = (1000, 400), clim=(0, 0.8))
+                # savefig("run/T_c_$it_text.png")
+                # T_s_hm = heatmap(x, y, transpose(T_s_renh), size = (1000, 400), clim=(0, 0.8))
+                # savefig("run/T_s_$it_text.png")
+
+                # unlock(surface)
+
            
             # display(p)
-            it += 1
+                it += 1
+            # end
         end
     end
 
