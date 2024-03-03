@@ -16,9 +16,13 @@ else
 	@init_parallel_stencil(Threads, Float32, 2)
 end
 
+## lookup tables
 const c = Data.Array([0 0;1 0;0 1;-1 0;0 -1;1 1;-1 1;-1 -1;1 -1])
-
 const w = Data.Array([4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36])
+const color_pars = Data.Array([ 0.13572138 4.61539260 -42.66032258 132.13108234 -152.94239396 59.28637943; 
+                            0.09140261 2.19418839 4.84296658 -14.18503333 4.27729857 2.82956604; 
+                            0.10667330 12.64194608 -60.58204836 110.36276771 -89.90310912 27.34824973])
+
 
 ## PARAMETERS
 const L_x = 2
@@ -35,10 +39,11 @@ const kappa_cs = 1.0
 const kappa_fs = 0.05
 const kappa_ps = 1.0
 
-const resolution = 100
+const resolution = 320
 const nu = 0.00003
-const t_end = 100.0
+const t_end = 400.0
 const v_0 = 0.2
+
 
 
 
@@ -252,12 +257,20 @@ end
 
 
 
-@parallel_indices (i, j) function heatmap_para!(image, array, min_val, max_val)
-    # red1 = [0.13572138, 4.61539260, -42.66032258, 132.13108234] 
+@parallel_indices (i, j) function heatmap_para!(image, array, min_val, max_val, table)
+    x = (array[i, j] - min_val) / (max_val - min_val)
+
     for k in 1:3
-        image[j, i, k] = clamp((array[i, j] - min_val) / (max_val - min_val), 0, 1)
+        col = 0.0
+ 
+        for l in 1:6
+            col *= x
+            col += table[k, 7-l]
+        end
+
+        image[j, i, k] = clamp(col, 0, 1)
     end
-    
+
     return nothing
 end
 
@@ -387,9 +400,9 @@ function main()
 
         if t % 50 == 1
             
-            @parallel (1:n_x, 1:n_y) heatmap_para!(v_img, sqrt.(u.^2+v.^2), 0, 0.3)
-            @parallel (1:n_x, 1:n_y) heatmap_para!(T_c_img, T_c, 0, 0.8)
-            @parallel (1:n_x, 1:n_y) heatmap_para!(T_s_img, T_s, 0, 0.8)
+            @parallel (1:n_x, 1:n_y) heatmap_para!(v_img, sqrt.(u.^2+v.^2), 0, 0.3, color_pars)
+            @parallel (1:n_x, 1:n_y) heatmap_para!(T_c_img, T_c, 0, 0.8, color_pars)
+            @parallel (1:n_x, 1:n_y) heatmap_para!(T_s_img, T_s, 0, 0.8, color_pars)
             
             v_renh = zeros( n_y, n_x, 3)
             T_c_renh = zeros(n_y, n_x, 3)
