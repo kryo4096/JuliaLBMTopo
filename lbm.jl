@@ -28,38 +28,38 @@ const color_pars = Data.Array([ 0.13572138 4.61539260 -42.66032258 132.13108234 
 const L_x = 2
 const L_y = 1
 
-const Ht = 150e-6
-const Htfactor = 2e1
-const ramp_p = 1e-6
-const ramp_k = 1e-6
-const K_f = 0.0002
-const K_s = 0.0007
-const K_sub = 0.0007
-const kappa_cs = 1.0
-const kappa_fs = 0.05
-const kappa_ps = 1.0
+const Ht = 150e-6f0
+const Htfactor = 2e1f0
+const ramp_p = 1e-6f0
+const ramp_k = 1e-6f0
+const K_f = 0.0002f0
+const K_s = 0.0007f0
+const K_sub = 0.0007f0
+const kappa_cs = 1.0f0
+const kappa_fs = 0.05f0
+const kappa_ps = 1.0f0
 
 const resolution = 320
-const nu = 0.00003
-const t_end = 400.0
-const v_0 = 0.2
+const nu = 0.00003f0
+const t_end = 400.0f0
+const v_0 = 0.2f0
 
+const me, dims = init_global_grid(nx, ny, 1)  # Initialization of MPI and more...
+const dx, dy  = Lx/nx_g(), Ly/ny_g()
 
 
 
 ## Dependent Parameters]
 
-const n_x = L_x * resolution
-const n_y = L_y * resolution
+const n_x = nx_g()
+const n_y = ny_g()
 
-const dx = 1 / resolution
-
-const tau_f = 3 * nu / dx + 0.5
+const tau_f = 3 * nu / dx + 0.5f0
 
 print(tau_f)
 
 # const tau_g = 3 * K / dx + 0.5
-const tau_g_s = 3 * K_sub / dx + 0.5
+const tau_g_s = 3 * K_sub / dx + 0.5f0
 
 const dt = dx
 
@@ -333,8 +333,8 @@ function main()
 
     for ix in 1:n_x
         for iy in 1:n_y
-            xl = (ix-0.5)*dx
-            yl = (iy-0.5)*dx
+            xl = (ix-0.5f0)*dx
+            yl = (iy-0.5f0)*dx
             noisemap[ix,iy] = sample(noise, 10 * xl, 10 * yl)
         end
     end
