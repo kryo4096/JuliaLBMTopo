@@ -1,9 +1,10 @@
 [deps]
+ChangePrecision = "3cb15238-376d-56a3-8042-d33272777c9a"
 CoherentNoise = "3547b4d8-3bdb-4c10-a099-d01a31e852e0"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
-Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
 OptimizationPolyalgorithms = "500b13db-7e66-49ce-bda4-eed966be6282"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"

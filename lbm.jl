@@ -1,4 +1,5 @@
-module LBM
+using ChangePrecision
+@changeprecision Float32 module LBM
 
 using .Threads
 using ParallelStencil
