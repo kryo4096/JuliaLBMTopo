@@ -8,8 +8,9 @@ using CoherentNoise
 
 using ImageIO
 using FileIO
+using ImageShow
 
-const USE_GPU = true
+const USE_GPU = false
 
 @static if USE_GPU
 	@init_parallel_stencil(CUDA, Float32, 2)
@@ -40,9 +41,9 @@ const kappa_cs = 1.0
 const kappa_fs = 0.05
 const kappa_ps = 1.0
 
-const resolution = 320
+const resolution = 100
 const nu = 0.00003
-const t_end = 400.0
+const t_end = 100.0
 const v_0 = 0.2
 
 
@@ -419,11 +420,11 @@ function main()
 
            
             it_text = lpad(it, 4, "0")
-
-
-            save("run/u_$it_text.png", v_renh)
-            save("run/T_c_$it_text.png", T_c_renh)
-            save("run/T_s_$it_text.png", T_s_renh)
+            
+            simshow(v_renh)
+            # save("run/u_$it_text.png", v_renh)
+            # save("run/T_c_$it_text.png", T_c_renh)
+            # save("run/T_s_$it_text.png", T_s_renh)
 
             # Threads.@spawn begin
 
