@@ -7,6 +7,7 @@ using WriteVTK
 using Optimization, OptimizationBBO, OptimizationOptimJL, Optim
 
 
+
 const c = [  0   0; 
              1   0;
              0   1;
